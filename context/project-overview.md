@@ -2,7 +2,7 @@
 
 ## About the Project
 
-Oral Exam Prep is a voice-first web application that simulates real oral language certification exams. The user speaks to an AI examiner in real time, the examiner reacts, asks follow-up questions, pushes back, and steers the conversation exactly as a human examiner would. At the end of the session the user receives a structured feedback report scored against the real exam's rubric. The MVP targets English learners preparing for IELTS and Cambridge B2 First, at B1–C1 levels, with a freemium subscription model.
+Oral Exam Prep is a voice-first web application that simulates real oral language certification exams. The user speaks to an AI examiner in real time, the examiner reacts, asks follow-up questions, pushes back, and steers the conversation exactly as a human examiner would. At the end of the session the user receives a structured feedback report scored against the real exam's rubric. The MVP targets learners preparing for IELTS and Cambridge B2 First at B1–C1 levels, in English or French, free and unlimited for all users.
 
 ## The Problem It Solves
 
@@ -17,7 +17,7 @@ Oral exam preparation is either expensive (private tutors, language schools) or 
 /feedback/[sessionId]    Post-session structured feedback report
 /login                   Email auth + Google OAuth
 /register                Account creation
-/account                 Subscription status, billing, session history count
+/account                 Account details and session history
 ```
 
 ## Core User Flow
@@ -28,7 +28,7 @@ Oral exam preparation is either expensive (private tutors, language schools) or 
 3. Creates account (email or Google)
 
 **Setup**
-1. User selects language (English for MVP)
+1. User selects the exam language (English or French)
 2. Selects exam type (IELTS or Cambridge B2 First)
 3. Selects proficiency level (B1, B2, or C1)
 4. Selects exercise type (Topic Discussion or Debate) or picks random
@@ -36,7 +36,7 @@ Oral exam preparation is either expensive (private tutors, language schools) or 
 
 **Session**
 1. AI examiner introduces itself and the task (TTS audio)
-2. User speaks — Deepgram VAD detects voice activity
+2. User speaks — ElevenLabs VAD detects voice activity
 3. User finishes turn — orchestration layer decides response type
 4. AI examiner responds in character (Groq LLM → OpenAI TTS)
 5. Loop continues for the fixed exam duration
@@ -49,30 +49,29 @@ Oral exam preparation is either expensive (private tutors, language schools) or 
 
 ## Features In Scope
 
-- English language only
+- English and French exam languages
 - IELTS and Cambridge B2 First oral formats
 - B1, B2, C1 proficiency levels
 - Topic Discussion exercise type
 - Debate exercise type
-- Real-time voice conversation with AI examiner via Deepgram STT + OpenAI TTS
+- Real-time voice conversation with AI examiner via ElevenLabs Scribe STT + OpenAI TTS
 - Reactive examiner behavior: follow-up questions, pushback, steering, interventions
 - Pause classification: mid-utterance / end of turn / hesitation / stuck
 - Level-adjusted intervention logic (more hand-holding at B1, less at C1)
 - Post-session structured feedback report (5 dimensions)
-- Pronunciation flagging via Deepgram word confidence scores
+- Pronunciation flagging via ElevenLabs Scribe word confidence scores
 - Live audio waveform visualization (user voice + examiner voice, different colors)
 - Transcript toggle (hidden by default, user can reveal)
 - Fixed session duration per exam type (IELTS ~14 min, Cambridge B2 ~15 min)
-- User accounts via Supabase Auth (email + Google OAuth)
-- 3 free lifetime sessions → subscription paywall
-- Monthly ($9.99) and annual ($59.99) subscription tiers via Stripe
+- User accounts via Django auth (email + password; Google OAuth out of scope for MVP)
+- Unlimited free practice sessions
 - Web app only
 
 ## Features Out of Scope
 
 - Mobile app (iOS or Android)
-- French, Spanish, or any language other than English
-- DELF, DALF, TCF, DELE, SIELE, or any non-English exam
+- Spanish, German, or any language beyond English and French
+- DELF, DALF, TCF, DELE, SIELE, or any exam other than IELTS and Cambridge B2 First
 - A2 and C2 proficiency levels
 - Structured Monologue exercise type
 - Selectable examiner voice/persona
@@ -94,5 +93,4 @@ A university student or young professional, 18–30, preparing for an IELTS or C
 - The examiner never breaks character during a session
 - The feedback report contains specific examples from the user's transcript, not generic advice
 - End-to-end latency from user finishing speaking to examiner responding is under 2 seconds
-- 3 free sessions enforce correctly — 4th session triggers paywall for unsubscribed users
-- Stripe subscription gate works: subscribed users have unlimited sessions, free users are blocked after 3
+- Sessions are unlimited and never blocked by a paywall

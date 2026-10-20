@@ -1,0 +1,67 @@
+{% extends 'app_base.html' %}
+
+{% block title %}Compte — Préparation d’examen oral{% endblock %}
+
+{% block app_content %}
+<div class="page page-narrow">
+  <header class="page-head">
+    <h1>Compte</h1>
+    <p>Vos informations et votre historique d’entraînement.</p>
+  </header>
+
+  <section class="card">
+    <h2>Informations personnelles</h2>
+    <div class="account-identity">
+      <span class="account-avatar" aria-hidden="true">{{ user.email|default:user.username|first|upper }}</span>
+      <dl class="detail-list">
+        <div>
+          <dt>E-mail</dt>
+          <dd>{{ user.email|default:user.username }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Sessions récentes</h2>
+    {% if recent_sessions %}
+      <ul class="session-history">
+        {% for item in recent_sessions %}
+          <li>
+            <div>
+              <span class="session-title">{{ item.get_exam_type_display }} · {{ item.get_level_display }}</span>
+              <span class="muted session-meta">{{ item.get_exercise_type_display }} · {{ item.started_at|date:"j N Y · H:i" }}</span>
+            </div>
+            {% if item.status == 'completed' %}
+              <a class="session-link" href="{% url 'feedback' item.id %}">
+                Voir le bilan
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14"/>
+                  <path d="m13 6 6 6-6 6"/>
+                </svg>
+              </a>
+            {% else %}
+              <span class="session-status{% if item.status == 'active' %} is-active{% endif %}">{{ item.get_status_display }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="account-empty">
+        <span class="account-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/>
+            <path d="M8 10h8"/>
+            <path d="M8 14h5"/>
+          </svg>
+        </span>
+        <p class="muted">Aucune session pour l’instant. Lancez votre premier entraînement depuis l’écran de configuration.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <div class="button-row account-actions">
+    <a class="btn btn-primary btn-block" href="{% url 'setup' %}">Démarrer une nouvelle session</a>
+  </div>
+</div>
+{% endblock %}

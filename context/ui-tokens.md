@@ -58,7 +58,7 @@ The visual language is an exam room: formal, quiet, purposeful. One accent color
 
 ## Typography
 
-**Font:** `Inter` — clean, slightly condensed at heavier weights, legible at small sizes. Load via `next/font/google`.
+**Font:** `Inter` — clean, slightly condensed at heavier weights, legible at small sizes. The stack is declared as `--font-sans` in `static/css/app.css` with system fallbacks; no webfont is bundled for MVP (add a Google Fonts `<link>` in `templates/base.html` if exact Inter rendering is required).
 
 | Style | Size | Weight | Line Height | Color Token | Usage |
 |---|---|---|---|---|---|
@@ -74,17 +74,18 @@ The visual language is an exam room: formal, quiet, purposeful. One accent color
 | `timer` | 28px | 300 | 1 | `text-primary` | Session countdown timer — light weight, tabular |
 | `score` | 40px | 700 | 1 | `text-primary` | Large score numbers (7/10) |
 
-**Tailwind class mappings:**
-- `display` → `text-4xl font-semibold`
-- `heading-1` → `text-2xl font-semibold`
-- `heading-2` → `text-xl font-semibold`
-- `heading-3` → `text-base font-semibold`
-- `body` → `text-[15px] font-normal`
-- `body-secondary` → `text-sm font-normal text-[#9AA0AC]`
-- `label` → `text-[13px] font-medium`
-- `caption` → `text-xs font-normal`
-- `timer` → `text-3xl font-light tabular-nums`
-- `score` → `text-[40px] font-bold`
+**CSS implementation (`static/css/app.css`):**
+- `display` → `.display` / hero `h1`
+- `heading-1` → page `h1` (24px base)
+- `heading-2` → `.card h2`, section headings
+- `heading-3` → `.card h3`
+- `body` → `body` base
+- `body-secondary` → `.muted`
+- `label` → `.field label`, `.section-label`
+- `caption` → small text / metadata
+- `mono` → `.mono`, transcript entries
+- `timer` → tabular numerals, light weight
+- `score` → `.score-value`
 
 ---
 
@@ -92,17 +93,17 @@ The visual language is an exam room: formal, quiet, purposeful. One accent color
 
 Base unit: **4px**. All spacing is a multiple of 4.
 
-| Token | Value | Tailwind | Usage |
+| Token | Value | CSS usage | Usage |
 |---|---|---|---|
-| `space-1` | 4px | `p-1`, `gap-1` | Tight internal padding (icon + label) |
-| `space-2` | 8px | `p-2`, `gap-2` | Compact spacing within components |
-| `space-3` | 12px | `p-3`, `gap-3` | Default internal card padding (tight) |
-| `space-4` | 16px | `p-4`, `gap-4` | Standard spacing — most common |
-| `space-5` | 20px | `p-5`, `gap-5` | Section internal padding |
-| `space-6` | 24px | `p-6`, `gap-6` | Card padding standard |
-| `space-8` | 32px | `p-8`, `gap-8` | Generous card padding, section gaps |
-| `space-12` | 48px | `p-12`, `gap-12` | Page section separation |
-| `space-16` | 64px | `p-16`, `gap-16` | Hero padding, major vertical rhythm |
+| `space-1` | 4px | `4px` | Tight internal padding (icon + label) |
+| `space-2` | 8px | `8px` | Compact spacing within components |
+| `space-3` | 12px | `12px` | Default internal card padding (tight) |
+| `space-4` | 16px | `16px` | Standard spacing — most common |
+| `space-5` | 20px | `20px` | Section internal padding |
+| `space-6` | 24px | `24px` | Card padding standard |
+| `space-8` | 32px | `32px` | Generous card padding, section gaps |
+| `space-12` | 48px | `48px` | Page section separation |
+| `space-16` | 64px | `64px` | Hero padding, major vertical rhythm |
 
 ---
 
@@ -110,8 +111,8 @@ Base unit: **4px**. All spacing is a multiple of 4.
 
 ### Card
 ```
-background:    #1A1D24   (bg-card)
-border:        1px solid #2A2D35   (border)
+background:    #1A1D24   (var(--bg-card))
+border:        1px solid #2A2D35   (var(--border))
 border-radius: 12px
 padding:       24px   (space-6)
 shadow:        none — no drop shadows in this design
@@ -119,9 +120,9 @@ shadow:        none — no drop shadows in this design
 
 ### Button — Primary (CTA)
 ```
-background:       #4A6FA5   (accent)
-background-hover: #35527A   (accent-dark)
-text-color:       #111318   (text-inverse)
+background:       #4A6FA5   (var(--accent))
+background-hover: #35527A   (var(--accent-dark))
+text-color:       #111318   (var(--text-inverse))
 font-size:        15px
 font-weight:      500
 border-radius:    8px
@@ -134,13 +135,13 @@ transition:       background 150ms ease
 ```
 background:       transparent
 background-hover: #1A2535   (accent-faint)
-text-color:       #9AA0AC   (text-secondary)
-text-hover-color: #E8EAED   (text-primary)
+text-color:       #9AA0AC   (var(--text-secondary))
+text-hover-color: #E8EAED   (var(--text-primary))
 font-size:        15px
 font-weight:      500
 border-radius:    8px
 padding:          12px 24px
-border:           1px solid #2A2D35   (border)
+border:           1px solid #2A2D35   (var(--border))
 transition:       all 150ms ease
 ```
 
@@ -158,14 +159,14 @@ border:           1px solid rgba(217, 83, 79, 0.3)
 
 ### Input
 ```
-background:     #20242D   (bg-card-secondary)
-border:         1px solid #2A2D35   (border)
+background:     #20242D   (var(--bg-card-secondary))
+border:         1px solid #2A2D35   (var(--border))
 border-focus:   1px solid #4A6FA5   (border-focus)
 border-radius:  8px
 padding:        12px 16px
 font-size:      15px
-color:          #E8EAED   (text-primary)
-placeholder:    #5C6370   (text-muted)
+color:          #E8EAED   (var(--text-primary))
+placeholder:    #5C6370   (var(--text-muted))
 ```
 
 ### Score Badge (feedback screen)
@@ -184,11 +185,11 @@ C1: background #3A2A1A, color #D4A017
 ### Setup Step (active / inactive)
 ```
 active-bg:       #1A2535   (accent-faint)
-active-border:   #4A6FA5   (accent)
-active-text:     #E8EAED   (text-primary)
-inactive-bg:     #1A1D24   (bg-card)
-inactive-border: #2A2D35   (border)
-inactive-text:   #5C6370   (text-muted)
+active-border:   #4A6FA5   (var(--accent))
+active-text:     #E8EAED   (var(--text-primary))
+inactive-bg:     #1A1D24   (var(--bg-card))
+inactive-border: #2A2D35   (var(--border))
+inactive-text:   #5C6370   (var(--text-muted))
 border-radius:   10px
 padding:         20px 24px
 ```
@@ -208,7 +209,7 @@ animation:       requestAnimationFrame at 60fps
 ### Status Pill (session screen)
 ```
 background:  transparent
-text-color:  #9AA0AC   (text-secondary)
+text-color:  #9AA0AC   (var(--text-secondary))
 font-size:   13px
 font-weight: 400
 — no border, no background. Just quiet text beneath the waveform.

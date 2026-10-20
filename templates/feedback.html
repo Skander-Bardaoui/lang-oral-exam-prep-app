@@ -1,0 +1,121 @@
+{% extends 'app_base.html' %}
+
+{% block title %}Bilan — Préparation d’examen oral{% endblock %}
+
+{% block app_content %}
+<div class="page page-wide">
+  <header class="page-head">
+    <span class="eyebrow">{{ exam.name }} · {{ language.label }} · {{ level_label }} · {{ exercise_label }}</span>
+    <h1>Bilan de la session</h1>
+    <p>Session commencée le {{ exam_session.started_at|date:"j N Y · H:i" }}</p>
+  </header>
+
+  {% if feedback %}
+    <div class="card">
+      <div class="feedback-summary">
+        <div>
+          <span class="section-label">Niveau global</span>
+          <p class="feedback-level">{{ feedback.overall_level }}</p>
+        </div>
+        <span class="verdict {% if feedback.overall_verdict == 'Ready' %}verdict-ready{% elif feedback.overall_verdict == 'Not Ready' %}verdict-not-ready{% else %}verdict-needs-work{% endif %}">
+          {% if feedback.overall_verdict == 'Ready' %}Prêt{% elif feedback.overall_verdict == 'Not Ready' %}Pas encore prêt{% else %}À consolider{% endif %}
+        </span>
+      </div>
+
+      <div class="score-grid">
+        <div class="score-card">
+          <span class="score-label">Aisance</span>
+          <p class="score-value">{{ feedback.fluency_score }}<small>/9</small></p>
+        </div>
+        <div class="score-card">
+          <span class="score-label">Vocabulaire</span>
+          <p class="score-value">{{ feedback.vocabulary_score }}<small>/9</small></p>
+        </div>
+        <div class="score-card">
+          <span class="score-label">Grammaire</span>
+          <p class="score-value">{{ feedback.grammar_score }}<small>/9</small></p>
+        </div>
+        <div class="score-card">
+          <span class="score-label">Réalisation de la tâche</span>
+          <p class="score-value">{{ feedback.task_achievement_score }}<small>/9</small></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Notes détaillées</h2>
+      <div class="notes-grid">
+        <div>
+          <h3>Aisance</h3>
+          <ul class="note-list">
+            {% for note in feedback.fluency_notes %}<li>{{ note }}</li>{% empty %}<li>Aucune note.</li>{% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h3>Vocabulaire</h3>
+          <ul class="note-list">
+            {% for note in feedback.vocabulary_notes %}<li>{{ note }}</li>{% empty %}<li>Aucune note.</li>{% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h3>Grammaire</h3>
+          <ul class="note-list">
+            {% for note in feedback.grammar_notes %}<li>{{ note }}</li>{% empty %}<li>Aucune note.</li>{% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h3>Réalisation de la tâche</h3>
+          <ul class="note-list">
+            {% for note in feedback.task_achievement_notes %}<li>{{ note }}</li>{% empty %}<li>Aucune note.</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    {% if feedback.pronunciation_flags %}
+      <div class="card">
+        <h2>Points de prononciation</h2>
+        <ul class="tag-list">
+          {% for flag in feedback.pronunciation_flags %}
+            <li class="tag">{{ flag.word }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>Recommandations</h2>
+      <ul class="note-list">
+        {% for item in feedback.recommendations %}<li>{{ item }}</li>{% empty %}<li>Continuez à vous entraîner régulièrement.</li>{% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div class="card">
+      <h2>Pas encore de bilan</h2>
+      <p class="muted">
+        Cette session n’a pas été évaluée. Terminez une session dans la salle d’examen
+        et le rapport de l’examinateur apparaîtra ici.
+      </p>
+    </div>
+  {% endif %}
+
+  {% if exam_session.transcript %}
+    <div class="card">
+      <h2>Transcription</h2>
+      <ol class="transcript-list">
+        {% for turn in exam_session.transcript %}
+          <li>
+            <span class="transcript-speaker">{% if turn.speaker == 'assistant' or turn.speaker == 'examiner' %}Examinateur{% else %}Vous{% endif %} :</span>
+            {{ turn.text }}
+          </li>
+        {% endfor %}
+      </ol>
+    </div>
+  {% endif %}
+
+  <div class="button-row">
+    <a class="btn btn-primary" href="{% url 'setup' %}">S’entraîner à nouveau</a>
+    <a class="btn btn-ghost" href="{% url 'account' %}">Retour au compte</a>
+  </div>
+</div>
+{% endblock %}

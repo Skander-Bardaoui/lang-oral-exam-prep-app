@@ -1,5 +1,7 @@
 # Build Plan
 
+> **Implementation note (2026-10-20):** The project was converted from Next.js/Supabase to **Django 5.2 + PostgreSQL 18 + Django templates + vanilla ES modules**. Features 01–06, 11–13, and 15 are implemented in Django, plus the free-tier limit. The numbered roadmap below is retained for sequencing, but every stack-specific instruction (Next.js, Supabase, Tailwind, `app/api/...`, React components) is **historical** — follow `context/architecture.md`, `context/code-standards.md`, and `context/library-docs.md` for the authoritative stack and file locations. Remaining work: 07 waveform, 08–10 smart examiner, 14 Stripe checkout/portal, 16 polish.
+
 ## Core Principle
 
 Every phase must be fully working before the next begins. Phase 1 establishes the project skeleton and auth. Phase 2 builds the voice pipeline end-to-end with a dumb examiner (no real prompt logic) so the audio plumbing is verified before any exam logic is added. Phase 3 makes the examiner smart — state machine, pause classification, intervention logic, proper prompts. Phase 4 adds evaluation and feedback. Phase 5 adds payments. Phase 6 adds the landing page and prepares for launch. Features are numbered sequentially across all phases.
@@ -9,37 +11,36 @@ Every phase must be fully working before the next begins. Phase 1 establishes th
 ## Phase 1 — Foundation
 
 ### 01 Project Scaffold
-Initialize the Next.js 14 project with TypeScript strict mode, Tailwind CSS, ESLint, and the folder structure defined in architecture.md. Configure path aliases. Set up environment variable schema with validation.
+Initialize the Django project with the `oral_exam` package, `accounts` and `exams` apps, PostgreSQL, templates, and static assets. Load environment variables from `.env.local` / `.env` via python-dotenv.
 
 **UI:** None.
 
 **Logic:**
-- `npx create-next-app` with TypeScript + Tailwind
-- Configure `tsconfig.json` with strict mode and path aliases (`@/components`, `@/lib`, etc.)
-- Create all empty folders from the architecture folder structure
-- Add `.env.local` template with all required keys listed
+- `python -m venv .venv`, `pip install -r requirements.txt`
+- `django-admin startproject oral_exam .`; `startapp accounts`; `startapp exams`
+- `templates/` and `static/` directories registered in settings
+- Provider keys and `DJANGO_SECRET_KEY` loaded through `django.conf.settings`
+- `.env.example` lists every required key with empty values
 
-**Exit criteria:** `npm run dev` starts without errors. `npm run build` completes. All folders exist.
+**Exit criteria:** `manage.py check` is clean, `manage.py migrate` succeeds, and `manage.py runserver` boots.
 
 ---
 
-### 02 Supabase Auth
-Wire up Supabase Auth with email/password and Google OAuth. Protect the `(app)` route group via middleware.
+### 02 Authentication
+Email/password auth using Django's built-in `User` (email stored as `username`). All app pages require login.
 
 **UI:**
-- `/login` — email + password form, Google OAuth button, link to register
-- `/register` — email + password form, Google OAuth button, link to login
+- `/login` — email + password form, disabled Google OAuth placeholder, link to register
+- `/register` — email + password + confirmation, link to login
 - Both pages use the dark exam-room aesthetic (see ui-tokens.md)
 
 **Logic:**
-- Install `@supabase/ssr`
-- Create `lib/supabase/client.ts` and `lib/supabase/server.ts`
-- Implement `middleware.ts` — redirect unauthenticated users from `(app)` routes to `/login`
-- Implement login and register server actions
-- Create `profiles` table in Supabase with `sessions_used = 0` and `subscription_status = 'free'`
-- Auto-create profile row on first sign-in via Supabase trigger
+- `accounts.forms.RegisterForm` / `LoginForm` normalize email to lowercase
+- `accounts.Profile` auto-created on user creation via a `post_save` signal
+- `@login_required` on page views; `api_login_required` returns JSON `401` for API views
+- `LOGIN_URL`, `LOGIN_REDIRECT_URL`, `LOGOUT_REDIRECT_URL` configured
 
-**Exit criteria:** User can register, log in, and be redirected to `/setup`. Unauthenticated access to `/setup` redirects to `/login`. Profile row is created in Supabase on registration.
+**Exit criteria:** User can register, log in, and be redirected to `/setup`. Unauthenticated access to `/setup` redirects to `/login/`. API requests return `401`. Profile row is created on registration.
 
 ---
 
@@ -47,7 +48,7 @@ Wire up Supabase Auth with email/password and Google OAuth. Protect the `(app)` 
 The setup flow where the user picks exam, level, and exercise type before starting a session.
 
 **UI:**
-- `/setup` — step-by-step selection: Language (locked to English for MVP) → Exam Type (IELTS / Cambridge B2 First) → Level (B1 / B2 / C1) → Exercise Type (Topic Discussion / Debate / Random)
+- `/setup` — step-by-step selection: Language (English / French) → Exam Type (IELTS / Cambridge B2 First) → Level (B1 / B2 / C1) → Exercise Type (Topic Discussion / Debate / Random)
 - Each step is a full-screen card with large tap targets
 - Selected state clearly indicated
 - "Start session" button enabled only when all selections are made
@@ -56,8 +57,8 @@ The setup flow where the user picks exam, level, and exercise type before starti
 **Logic:**
 - Create `config/exams.ts` with all exam configs (types, levels, durations in seconds, display names)
 - On "Start session": call `POST /api/session/start`
-- `/api/session/start`: validate auth, check free tier limit (`sessions_used < 3` or `subscription_status === 'active'`), create session row in Supabase, return `sessionId` + full exam config
-- If free tier exceeded: return 403 with `{ reason: 'limit_reached' }` — client redirects to `/account`
+- `/api/session/start`: validate auth and configuration, create the session row, return `sessionId` + full exam config
+- Sessions are unlimited; there is no paywall or free-tier cap
 
 **Exit criteria:** User can complete all steps and click Start. API creates a session row. Free tier limit blocks a 4th session for unsubscribed users and returns the correct error.
 
@@ -65,8 +66,8 @@ The setup flow where the user picks exam, level, and exercise type before starti
 
 ## Phase 2 — Voice Pipeline (Dumb Examiner)
 
-### 04 Microphone Capture + Deepgram Connection
-Get audio from the browser microphone into Deepgram's streaming STT. No session logic yet — just verify the pipeline works.
+### 04 Microphone Capture + ElevenLabs Realtime STT
+Get audio from the browser microphone into ElevenLabs Scribe Realtime. No session logic yet — just verify the pipeline works.
 
 **UI:**
 - `/session` (stub) — a single "Connect" button and a raw transcript output area (dev only, will be replaced in Phase 3)
@@ -74,12 +75,12 @@ Get audio from the browser microphone into Deepgram's streaming STT. No session 
 
 **Logic:**
 - Create `hooks/useAudioCapture.ts` — request mic permission, create MediaStream, expose audio data
-- Create `hooks/useDeepgramStream.ts` — fetch token from `/api/deepgram/token`, open Deepgram WebSocket, pipe audio, emit transcript events
-- Create `app/api/deepgram/token/route.ts` — authenticate user, issue short-lived Deepgram token using `DEEPGRAM_API_KEY`
-- Deepgram config: Nova-2 model, `interim_results: true`, `vad_events: true`, `endpointing: 300`, `language: en`
+- Create `hooks/useTranscriptionStream.ts` — fetch token from `/api/stt/token`, open ElevenLabs realtime WebSocket, pipe audio, emit transcript events
+- Create `app/api/stt/token/route.ts` — authenticate user, issue short-lived ElevenLabs single-use token using `ELEVENLABS_API_KEY`
+- ElevenLabs config: `scribe_v2_realtime` model, `audio_format: pcm_16000`, `commit_strategy: vad`, `language_code` from the session language (`en` or `fr`)
 - Log raw transcript events to console
 
-**Exit criteria:** User clicks Connect, browser requests mic permission, Deepgram WebSocket connects, speaking produces live transcript output in the dev UI.
+**Exit criteria:** User clicks Connect, browser requests mic permission, ElevenLabs WebSocket connects, speaking produces live transcript output in the dev UI.
 
 ---
 
@@ -193,7 +194,7 @@ Wire all pieces together into the real `/session` UI. Replace the dev stub.
 
 **Logic:**
 - `session/page.tsx` reads `sessionId` from URL params, fetches session config from Supabase
-- Orchestrates all hooks: `useAudioCapture` → `useDeepgramStream` → `useSessionMachine` → LLM call → TTS call → `useWaveform`
+- Orchestrates all hooks: `useAudioCapture` → `useTranscriptionStream` → `useSessionMachine` → LLM call → TTS call → `useWaveform`
 - Session timer counts down, fires `TIMER_EXPIRED` event at zero
 - Transcript panel displays the accumulated session transcript
 
@@ -243,27 +244,7 @@ Display the structured feedback report.
 
 ---
 
-## Phase 5 — Payments
-
-### 14 Stripe Subscription
-Wire up Stripe for monthly and annual subscriptions.
-
-**UI:**
-- `/account` — shows current plan (Free / Monthly / Annual), sessions used (for free tier), "Upgrade" button, "Manage billing" button (Stripe portal)
-- Paywall modal — triggered when free tier limit is reached on `/setup`. Shows tier options, price, CTA to subscribe.
-
-**Logic:**
-- Create `lib/stripe/client.ts` — Stripe SDK wrapper
-- `POST /api/stripe/create-checkout` — create Stripe Checkout session for selected tier, redirect to Stripe
-- `POST /api/stripe/webhook` — handle `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` — update `profiles.subscription_status` and `profiles.subscription_tier`
-- `POST /api/stripe/portal` — create Stripe Customer Portal session for billing management
-- Add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_ANNUAL_PRICE_ID` to env
-
-**Exit criteria:** User can subscribe via Stripe Checkout. Webhook updates subscription status in Supabase. Subscribed user can complete a 4th session. Free user is blocked and shown the paywall. Stripe portal allows subscription cancellation.
-
----
-
-## Phase 6 — Launch Prep
+## Phase 5 — Launch Prep
 
 ### 15 Landing Page
 The public homepage at `/`.
@@ -288,7 +269,7 @@ Cover all error and empty states before launch.
 
 **UI:**
 - Mic permission denied state on `/session` — clear explanation + instructions
-- Deepgram connection failure state — retry button
+- ElevenLabs connection failure state — retry button
 - LLM/TTS error during session — graceful degradation message
 - Network offline detection
 - 404 page
@@ -296,7 +277,7 @@ Cover all error and empty states before launch.
 
 **Logic:**
 - Add error boundaries around session components
-- Add retry logic to Deepgram connection (3 attempts with backoff)
+- Add retry logic to ElevenLabs connection (3 attempts with backoff)
 - Log errors to console (structured) — no external error tracking for MVP
 
-**Exit criteria:** All error states render correctly. A Deepgram connection failure does not crash the session page. Mic denial shows a helpful message.
+**Exit criteria:** All error states render correctly. An ElevenLabs connection failure does not crash the session page. Mic denial shows a helpful message.

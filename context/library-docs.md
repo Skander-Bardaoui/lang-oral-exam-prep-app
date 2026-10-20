@@ -2,493 +2,441 @@
 
 This file documents the exact usage patterns for every third-party library in this project. The agent reads this before touching any library — it overrides general knowledge.
 
+The stack is **Django 5.2 + `requests` + python-dotenv + Stripe**, with vanilla ES modules in the browser (no frontend framework, no bundler). All provider calls happen server-side in `exams/services.py`; secrets never reach the browser.
+
 ---
 
-## Supabase
+## Django
 
 ### Setup / Initialisation
 
-Two clients: one for the browser, one for the server. Never mix them.
+Project package: `oral_exam/`. Apps: `accounts`, `exams`.
 
-```typescript
-// lib/supabase/client.ts — browser client (use in Client Components and hooks)
-import { createBrowserClient } from '@supabase/ssr'
+```python
+# oral_exam/settings.py
+from pathlib import Path
+from dotenv import load_dotenv
 
-export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
-```
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env.local')
+load_dotenv(BASE_DIR / '.env')  # does not override already-set values
 
-```typescript
-// lib/supabase/server.ts — server client (use in API routes and Server Components)
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'accounts',
+    'exams',
+]
 
-export function createClient() {
-  const cookieStore = cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-}
+TEMPLATES = [{'DIRS': [BASE_DIR / 'templates'], ...}]
+STATICFILES_DIRS = [BASE_DIR / 'static']
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/setup/'
+LOGOUT_REDIRECT_URL = '/login/'
 ```
 
 ### Common Patterns
 
-**Querying with user scope (always filter by user_id):**
-```typescript
-const supabase = createClient()
-const { data, error } = await supabase
-  .from('sessions')
-  .select('*')
-  .eq('user_id', userId)
-  .order('started_at', { ascending: false })
+**Protected page:**
+```python
+from django.contrib.auth.decorators import login_required
 
-if (error) throw new Error(`[supabase] query failed: ${error.message}`)
+@login_required
+def setup(request):
+    ...
 ```
 
-**Inserting a row:**
-```typescript
-const { data, error } = await supabase
-  .from('sessions')
-  .insert({
-    user_id: userId,
-    exam_type: config.examType,
-    level: config.level,
-    exercise_type: config.exerciseType,
-    language: 'en',
-    duration_seconds: config.durationSeconds,
-    status: 'active',
-  })
-  .select('id')
-  .single()
-
-if (error) throw new Error(`[supabase] insert failed: ${error.message}`)
-return data.id
+**Protected JSON endpoint (never redirect to HTML):**
+```python
+# exams/views.py
+def api_login_required(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        return view(request, *args, **kwargs)
+    return wrapped
 ```
 
-**Updating a row:**
-```typescript
-const { error } = await supabase
-  .from('sessions')
-  .update({ status: 'completed', ended_at: new Date().toISOString() })
-  .eq('id', sessionId)
-  .eq('user_id', userId)  // always scope updates to the authenticated user
-
-if (error) throw new Error(`[supabase] update failed: ${error.message}`)
+**Reading a JSON body:**
+```python
+def _parse_json(request):
+    try:
+        return json.loads(request.body or '{}')
+    except (TypeError, ValueError):
+        return None
 ```
 
-**Getting the current user in an API route:**
-```typescript
-const supabase = createClient()
-const { data: { user }, error } = await supabase.auth.getUser()
-if (error || !user) return Response.json({ error: 'unauthorized' }, { status: 401 })
+**Streaming a provider response:**
+```python
+from django.http import StreamingHttpResponse
+
+return StreamingHttpResponse(
+    services.stream_examiner_reply(transcript, history),
+    content_type='text/plain; charset=utf-8',
+)
+```
+
+**CSRF for JS fetches:** `templates/base.html` exposes `<meta name="csrf-token" content="{{ csrf_token }}">`, and `static/js/csrf.js` adds `X-CSRFToken` to every non-GET request.
+
+**Stripe webhook:** `@csrf_exempt` + `@require_POST` (Stripe cannot send a CSRF token). Signature fails → `400`, never `500`.
+
+### Rules
+- **Authentication is Django's built-in `User`.** Email is stored as `username` (normalized lowercase). Do not add a custom user model.
+- **Always scope object lookups to `request.user`** — `get_object_or_404(ExamSession, pk=..., user=request.user)`.
+- **Use `JsonResponse`, not `Response.json`.** Errors use `{'error': 'code', 'message': 'human text'}`.
+- **Validate at the boundary.** `_parse_json` + explicit field checks before touching models or providers.
+- **Never access provider keys outside `settings`.** They are loaded from `.env.local`; never print or return them.
+- **Templates only.** No JSON API for page rendering. Page data is passed as template context.
+- **The session must never crash the page.** Provider failures become user-facing status messages; resources are torn down first.
+
+---
+
+## PostgreSQL / psycopg
+
+### Setup
+
+`psycopg[binary]` 3.2 is installed; Django uses `django.db.backends.postgresql` automatically. Configuration lives in `settings._database_config()`:
+
+```python
+# Priority 1: a single connection URL
+DATABASE_URL=postgres://user:password@127.0.0.1:5432/oral_exam?sslmode=require
+
+# Priority 2: individual variables (used when DATABASE_URL is blank)
+DB_NAME=oral_exam
+DB_USER=postgres
+DB_PASSWORD=...
+DB_HOST=127.0.0.1
+DB_PORT=5432
+```
+
+### Common commands
+
+```bash
+.venv/Scripts/python.exe manage.py migrate
+.venv/Scripts/python.exe manage.py shell -c "from django.db import connection; print(connection.vendor)"
+.venv/Scripts/python.exe manage.py test
 ```
 
 ### Rules
-- **Always use the server client in API routes.** The browser client is only for hooks and Client Components.
-- **Always scope queries to the authenticated user.** Every query on `sessions`, `feedback`, and `profiles` must include `.eq('user_id', userId)`. Never query without a user scope.
-- **Never use the service role key in client-side code.** Service role key bypasses row-level security — only use it in server contexts where RLS bypass is explicitly needed (e.g. Stripe webhook updating a profile).
-- **Check for errors after every query.** Supabase returns `{ data, error }` — always check `error` before using `data`.
-- **`profiles` table is the source of truth for subscription state.** Never cache subscription status in session storage or local state.
+- **PostgreSQL is required; there is no SQLite fallback.** If the server is unreachable, fail loudly at startup/request time.
+- **`DATABASE_URL` wins** over the `DB_*` variables. Hosted providers should use `?sslmode=require`.
+- **Never print or commit `DB_PASSWORD` or `DATABASE_URL`.**
+- **Tests create and destroy `test_oral_exam`** on the same server; the configured role needs `CREATEDB`.
+- **Use `transaction.atomic()` + `select_for_update()`** for counter updates (the free-tier limit). Do not read-modify-write outside a transaction.
+- **Run migrations after every model change:** `makemigrations` then `migrate`. Never edit applied migrations.
+
+---
+
+## `requests` (ElevenLabs, Groq, OpenAI TTS)
+
+All HTTP calls to providers live in `exams/services.py`. Use `requests.post` with explicit timeouts and `raise`-free error handling — convert every failure into `ProviderError`.
+
+### Setup
+
+```python
+import requests
+from django.conf import settings
+
+class ProviderError(Exception):
+    """Raised when an external provider rejects or fails a request."""
+```
+
+### Common Patterns
+
+**Short-lived token issuance (ElevenLabs):**
+```python
+response = requests.post(
+    'https://api.elevenlabs.io/v1/single-use-token/realtime_scribe',
+    headers={'xi-api-key': settings.ELEVENLABS_API_KEY},
+    timeout=20,
+)
+if response.status_code != 200:
+    raise ProviderError('Could not start a transcription session')
+token = response.json()['token']  # `token` key, not `token` wrapper object
+```
+
+**Streaming SSE (Groq):**
+```python
+response = requests.post(
+    'https://api.groq.com/openai/v1/chat/completions',
+    headers={'Authorization': f'Bearer {settings.GROQ_API_KEY}'},
+    json=payload,
+    stream=True,
+    timeout=60,
+)
+
+def generate():
+    try:
+        for raw in response.iter_lines():
+            line = raw.decode('utf-8') if isinstance(raw, bytes) else raw
+            if not line.startswith('data:'):
+                continue
+            data = line[5:].strip()
+            if not data or data == '[DONE]':
+                continue
+            chunk = json.loads(data)['choices'][0].get('delta', {}).get('content')
+            if chunk:
+                yield chunk
+    finally:
+        response.close()
+return generate()
+```
+
+**Streaming binary (OpenAI TTS):**
+```python
+for chunk in response.iter_content(chunk_size=8192):
+    if chunk:
+        yield chunk
+```
+
+### Rules
+- **Every request has a timeout.** Token 20s, LLM stream 60s, TTS 60s, evaluation 90s.
+- **Close the response** in a `finally` block when wrapping it in a generator.
+- **Status errors:** log `[provider]` + status + first 500 chars; raise a generic `ProviderError` with a user-safe message.
+- **`requests.RequestException`** (network/DNS/timeout) is always caught and converted to `ProviderError`.
+- **Never buffer a full audio or LLM stream before returning it.** Stream with `StreamingHttpResponse`.
 
 ---
 
 ## Groq
 
-### Setup / Initialisation
+### Endpoint and model
 
-```typescript
-// lib/groq/client.ts
-import Groq from 'groq-sdk'
+`POST https://api.groq.com/openai/v1/chat/completions`
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+Model: **`qwen/qwen3.8-27b`** (from `settings.GROQ_MODEL`). The originally planned `llama-3.3-70b-versatile` is **not available** on this account (Groq returns `404 model_not_found`). Never hardcode another model; change `GROQ_MODEL` if the account changes.
 
-export { groq }
-```
+### Examiner turn (streaming)
 
-### Common Patterns
-
-**Streaming examiner response:**
-```typescript
-// app/api/llm/route.ts
-import { groq } from '@/lib/groq/client'
-
-const stream = await groq.chat.completions.create({
-  model: 'llama-3.3-70b-versatile',
-  messages: [
-    { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: userTurn }
-  ],
-  temperature: 0.7,
-  max_tokens: 300,   // examiner responses are short — never let them run long
-  stream: true,
-})
-
-const encoder = new TextEncoder()
-const readable = new ReadableStream({
-  async start(controller) {
-    for await (const chunk of stream) {
-      const text = chunk.choices[0]?.delta?.content ?? ''
-      if (text) controller.enqueue(encoder.encode(text))
-    }
-    controller.close()
-  }
-})
-
-return new Response(readable, {
-  headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-})
-```
-
-**Non-streaming evaluation call (JSON mode):**
-```typescript
-const response = await groq.chat.completions.create({
-  model: 'llama-3.3-70b-versatile',
-  messages: [
-    { role: 'system', content: evaluationSystemPrompt },
-    { role: 'user', content: evaluationUserPrompt }
-  ],
-  temperature: 0.3,   // lower temperature for consistent structured output
-  max_tokens: 1000,
-  response_format: { type: 'json_object' },
-  stream: false,
-})
-
-const raw = response.choices[0]?.message?.content
-if (!raw) throw new Error('[groq] empty evaluation response')
-
-const feedback = JSON.parse(raw) as FeedbackSchema
-```
-
-### Rules
-- **Model string:** always `'llama-3.3-70b-versatile'`. Never substitute a different model without updating this file.
-- **`max_tokens: 300` for examiner turns.** Examiners speak in short, focused sentences. A 300-token ceiling prevents rambling. The evaluation call uses `max_tokens: 1000`.
-- **`temperature: 0.7` for examiner, `0.3` for evaluation.** The examiner needs some variation to feel natural; the evaluation needs consistency.
-- **Always stream examiner responses.** Never wait for the full response before sending to TTS — latency is a UX killer.
-- **Never call Groq from a Client Component or hook.** All Groq calls happen in `app/api/llm/route.ts` and `app/api/session/evaluate/route.ts`.
-- **Parse evaluation JSON with a try/catch.** Groq's JSON mode is reliable but not perfect. If parsing fails, log the raw response and return a 500.
-
----
-
-## Deepgram
-
-### Setup / Initialisation
-
-Deepgram is used in two places:
-1. **Server-side:** issue short-lived tokens via `@deepgram/sdk` in the token API route.
-2. **Client-side:** open a WebSocket directly to Deepgram using the token (raw WebSocket, not the SDK — the SDK's browser support is limited).
-
-```typescript
-// app/api/deepgram/token/route.ts — server-side token issuance
-import { createClient } from '@deepgram/sdk'
-
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY!)
-
-export async function GET(request: Request) {
-  const { data: tokenData, error } = await deepgram.auth.grantToken()
-  if (error) return Response.json({ error: 'token_failed' }, { status: 500 })
-  return Response.json({ token: tokenData.access_token })
+```python
+payload = {
+    'model': settings.GROQ_MODEL,
+    'temperature': 0.7,
+    'max_tokens': 300,
+    'stream': True,
+    'messages': [
+        {'role': 'system', 'content': PLACEHOLDER_SYSTEM_PROMPT},
+        *history,
+        {'role': 'user', 'content': transcript},
+    ],
 }
 ```
 
-### Common Patterns
+`PLACEHOLDER_SYSTEM_PROMPT` is intentionally a stub until Feature 10 (prompt builder + personas).
 
-**Opening the Deepgram WebSocket from the browser:**
-```typescript
-// hooks/useDeepgramStream.ts
-const tokenRes = await fetch('/api/deepgram/token')
-const { token } = await tokenRes.json()
+### Evaluation (non-streaming JSON)
 
-const ws = new WebSocket(
-  `wss://api.deepgram.com/v1/listen?` +
-  `model=nova-2&` +
-  `language=en&` +
-  `encoding=linear16&` +
-  `sample_rate=16000&` +
-  `interim_results=true&` +
-  `vad_events=true&` +
-  `endpointing=300`,
-  ['token', token]
+```python
+payload = {
+    'model': settings.GROQ_MODEL,
+    'temperature': 0.3,
+    'max_tokens': 2000,
+    'response_format': {'type': 'json_object'},
+    'messages': [
+        {'role': 'system', 'content': EVALUATION_SYSTEM_PROMPT},
+        {'role': 'user', 'content': prompt},
+    ],
+}
+```
+
+If the model rejects `response_format` with `400`, retry once **without** it and parse the JSON object from the text (first `{` → last `}`).
+
+### Normalizing the result
+
+`_normalize_feedback` clamps scores to `0–9`, validates `overall_level` (`B1|B2|C1`), validates the verdict (`Ready|Needs Work|Not Ready`), coerces notes/recommendations to string lists, and truncates pronunciation flags to 50.
+
+### Rules
+- **Examiner turn: temperature 0.7, `max_tokens` 300, always streamed.**
+- **Evaluation: temperature 0.3, `max_tokens` 2000, never streamed.**
+- **Groq is called only from `exams/services.py`, which is only reached from Django views.** No provider key or call ever reaches the client.
+- **Treat model output as untrusted.** Parse defensively; never assume keys exist.
+
+---
+
+## ElevenLabs Scribe v2 Realtime (STT)
+
+Two halves:
+
+1. **Server** (`exams/services.py::create_realtime_token`) issues a single-use token via REST.
+2. **Browser** (`static/js/transcription.js`) opens a raw WebSocket to ElevenLabs using that token.
+
+### Server — token route
+
+```python
+# exams/views.py
+@api_login_required
+def stt_token(request):
+    try:
+        token = services.create_realtime_token()
+    except services.ProviderError as exc:
+        return _error(str(exc), status=502, code='provider_error')
+    return JsonResponse({'token': token})
+```
+
+### Client — WebSocket
+
+```js
+const res = await fetch('/api/stt/token/', { credentials: 'same-origin' })
+const { token } = await res.json()
+
+const params = new URLSearchParams({
+  model_id: 'scribe_v2_realtime',
+  token,
+  audio_format: sampleRateToFormat(actualRate), // pcm_16000 etc.
+  commit_strategy: 'vad',
+  language_code: sessionLanguage, // 'en' or 'fr', from the session config
+})
+const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${params}`)
+```
+
+Send one message per audio chunk:
+
+```js
+ws.send(JSON.stringify({
+  message_type: 'input_audio_chunk',
+  audio_base_64: base64Pcm,
+  commit: false,
+  sample_rate: actualRate,
+}))
+```
+
+Incoming messages handled: `partial_transcript`, `committed_transcript`, `committed_transcript_with_timestamps`, `error`, `auth_error`. Anything else is ignored.
+
+### Rules
+- **Tokens are single-use and expire after 15 minutes.** Issue one per session start; never cache or reuse.
+- **The API key never reaches the browser.** Only the single-use token does.
+- **`audio_format` must match the real sample rate.** `AudioCapture` requests 16000Hz; the actual rate is mapped to `pcm_8000/16000/22050/24000/44100/48000`.
+- **`commit_strategy: 'vad'`** — ElevenLabs segments speech by silence; the client never sends `commit: true`.
+- **Close the socket in `stop()` and on `pagehide`.** Reject with a clear error on `auth_error` so the UI can recover.
+- **Word confidence** (for pronunciation flags) is available in `committed_transcript_with_timestamps` → `words[].logprob`, but only when timestamps are enabled.
+
+---
+
+## OpenAI TTS
+
+`POST https://api.openai.com/v1/audio/speech` — model `tts-1`, voice `onyx`, format `mp3`.
+
+```python
+response = requests.post(
+    'https://api.openai.com/v1/audio/speech',
+    headers={'Authorization': f'Bearer {settings.OPENAI_API_KEY}'},
+    json={'model': 'tts-1', 'voice': 'onyx', 'input': text, 'response_format': 'mp3'},
+    stream=True,
+    timeout=60,
 )
 ```
 
-**Handling Deepgram messages:**
-```typescript
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data as string)
-
-  if (msg.type === 'Results') {
-    const transcript = msg.channel.alternatives[0].transcript
-    const isFinal = msg.is_final
-    const confidence = msg.channel.alternatives[0].confidence
-    const words = msg.channel.alternatives[0].words  // word-level confidence scores
-
-    if (transcript.trim()) {
-      onTranscript({ transcript, isFinal, confidence, words })
-    }
-  }
-
-  if (msg.type === 'SpeechStarted') {
-    onSpeechStart()
-  }
-
-  if (msg.type === 'UtteranceEnd') {
-    onUtteranceEnd()
-  }
-}
-```
-
-**Sending audio data:**
-```typescript
-// Audio must be PCM linear16, 16kHz, mono
-// Use AudioWorklet or ScriptProcessor to extract raw PCM from the MediaStream
-if (ws.readyState === WebSocket.OPEN) {
-  ws.send(pcmBuffer)  // ArrayBuffer of Int16Array PCM data
-}
-```
-
-**Closing cleanly:**
-```typescript
-// Always send a close message before closing the WebSocket
-ws.send(JSON.stringify({ type: 'CloseStream' }))
-ws.close()
-```
+The Django view streams bytes as `audio/mpeg`; the browser fetches the full response, decodes it with `AudioContext.decodeAudioData`, and plays it through an `AnalyserNode`.
 
 ### Rules
-- **Tokens are short-lived (1 hour).** Issue a new token at the start of each session. Never reuse tokens across sessions.
-- **Audio format must be PCM linear16 at 16kHz mono.** Deepgram will silently fail or produce garbage with the wrong format. Use `AudioWorklet` with a 16kHz resampler.
-- **`endpointing: 300`** — 300ms of silence signals utterance end. Do not change this without testing.
-- **Always handle `UtteranceEnd` events**, not just `Results` with `is_final: true`. `UtteranceEnd` is the more reliable signal for pause classification.
-- **Close cleanly.** Always send `{ type: 'CloseStream' }` before `ws.close()`. A hard close without this message may cause Deepgram to not flush the final transcript.
-- **The Deepgram SDK is only used server-side for token issuance.** The browser connects via raw WebSocket using the token.
-
----
-
-## OpenAI (TTS)
-
-### Setup / Initialisation
-
-```typescript
-// lib/tts/client.ts
-import OpenAI from 'openai'
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
-export { openai }
-```
-
-### Common Patterns
-
-**Streaming TTS audio from an API route:**
-```typescript
-// app/api/tts/route.ts
-import { openai } from '@/lib/tts/client'
-
-export async function POST(request: Request) {
-  const { text } = await request.json()
-
-  const response = await openai.audio.speech.create({
-    model: 'tts-1',
-    voice: 'onyx',     // English examiner voice — professional, neutral, male
-    input: text,
-    response_format: 'mp3',
-  })
-
-  const audioStream = response.body
-  return new Response(audioStream, {
-    headers: { 'Content-Type': 'audio/mpeg' }
-  })
-}
-```
-
-**Playing streamed audio in the browser:**
-```typescript
-const res = await fetch('/api/tts', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ text: examinerText })
-})
-
-const arrayBuffer = await res.arrayBuffer()
-const audioContext = new AudioContext()
-const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
-const source = audioContext.createBufferSource()
-
-// Wire through AnalyserNode for waveform visualization
-const analyser = audioContext.createAnalyser()
-analyser.fftSize = 256
-source.connect(analyser)
-analyser.connect(audioContext.destination)
-
-source.start()
-source.onended = () => onExaminerFinished()
-```
-
-### Rules
-- **Model:** always `'tts-1'` (not `'tts-1-hd'`). The HD model is slower and the quality difference isn't noticeable in a voice conversation.
-- **Voice:** `'onyx'` for the English examiner. Professional, clear, neutral male voice. Do not change without updating this file.
-- **Response format:** `'mp3'`. Browsers handle it natively, file size is small.
-- **Always reuse the `AudioContext`** across a session — create one per session, not one per TTS call. Creating multiple `AudioContext` instances will hit browser limits.
-- **Never call OpenAI TTS from the client.** The API key must stay server-side. All TTS calls go through `/api/tts`.
-- **Text length limit:** OpenAI TTS accepts up to 4096 characters. Examiner responses are always under 300 tokens (~250 words) so this won't be hit, but validate input length in the route.
+- **Model `tts-1` (not `tts-1-hd`); voice `onyx`.** Do not change without updating this file.
+- **Validate length server-side** (< 4096 chars) and reject empty text.
+- **429 / insufficient quota:** the API currently has no credits. `services.open_tts_stream` raises `ProviderError('OpenAI TTS has no remaining credits')`; the view returns `502`.
+- **Browser fallback is required:** `static/js/tts.js` catches the failure and speaks the same text with `window.speechSynthesis` so the examiner turn still works. Keep this fallback.
+- **One `AudioContext` per session.** Reuse it for every utterance; creating one per call hits browser limits.
+- **Always stop/cancel the previous source** before playing a new one.
 
 ---
 
 ## Stripe
 
-### Setup / Initialisation
+Uses the official `stripe` Python SDK (v16).
 
-```typescript
-// lib/stripe/client.ts
-import Stripe from 'stripe'
+### Setup
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-  typescript: true,
-})
+```python
+# exams/views.py — inside the webhook handler
+stripe.api_key = settings.STRIPE_SECRET_KEY
 ```
 
-### Common Patterns
+### Webhook
 
-**Creating a checkout session:**
-```typescript
-const session = await stripe.checkout.sessions.create({
-  customer: stripeCustomerId ?? undefined,
-  customer_email: stripeCustomerId ? undefined : userEmail,
-  mode: 'subscription',
-  payment_method_types: ['card'],
-  line_items: [{ price: priceId, quantity: 1 }],
-  success_url: `${process.env.NEXT_PUBLIC_APP_URL}/account?upgraded=true`,
-  cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/account`,
-  metadata: { userId },
-})
-
-return Response.json({ url: session.url })
+```python
+@csrf_exempt
+@require_POST
+def stripe_webhook(request):
+    try:
+        event = stripe.Webhook.construct_event(
+            request.body,
+            request.headers.get('Stripe-Signature', ''),
+            settings.STRIPE_WEBHOOK_SECRET,
+        )
+    except (ValueError, stripe.SignatureVerificationError):
+        return _error('Invalid webhook payload', status=400, code='invalid_signature')
 ```
 
-**Handling webhook events:**
-```typescript
-// app/api/stripe/webhook/route.ts
-export async function POST(request: Request) {
-  const body = await request.text()
-  const sig = request.headers.get('stripe-signature')!
+Handled events:
 
-  let event: Stripe.Event
-  try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!)
-  } catch (err) {
-    console.error('[stripe/webhook] signature verification failed:', err)
-    return new Response('Webhook error', { status: 400 })
-  }
-
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.Checkout.Session
-      const userId = session.metadata?.userId
-      // update profiles.subscription_status = 'active', store stripe_customer_id
-      break
-    }
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted': {
-      // update profiles.subscription_status accordingly
-      break
-    }
-  }
-
-  return new Response(null, { status: 200 })
-}
-```
-
-**Creating a billing portal session:**
-```typescript
-const portalSession = await stripe.billingPortal.sessions.create({
-  customer: stripeCustomerId,
-  return_url: `${process.env.NEXT_PUBLIC_APP_URL}/account`,
-})
-
-return Response.json({ url: portalSession.url })
-```
+- `checkout.session.completed` → `subscription_status = 'active'`, store `stripe_customer_id`, set tier from `metadata.tier`.
+- `customer.subscription.updated` / `.deleted` → update status based on `obj.status` (`active`/`trialing` → active, `canceled` → cancelled) and tier from the price ID.
 
 ### Rules
-- **Webhook signature must always be verified.** Never process a Stripe event without `stripe.webhooks.constructEvent`. Return `400` on failure, not `500`.
-- **Raw body is required for webhook verification.** Use `request.text()`, not `request.json()`. Next.js must not parse the body before Stripe sees it.
-- **`profiles.subscription_status` is only ever written by the webhook handler.** No other code path updates subscription state.
-- **Add `NEXT_PUBLIC_APP_URL` to env vars.** Needed for success/cancel URLs in checkout sessions.
-- **Test webhooks locally with `stripe listen --forward-to localhost:3000/api/stripe/webhook`.**
+- **Verify the signature on every event.** Use `request.body`, never `request.json()`.
+- **`stripe.SignatureVerificationError`** (top-level) — `stripe.error` is not importable in v16.
+- **Invalid signature → 400.** Unconfigured webhook → 503. Never 500.
+- **`profiles.subscription_status` is written only by the webhook.** No other code path changes subscription state.
+- **Local testing:** `stripe listen --forward-to localhost:8000/api/stripe/webhook/`.
+- **Missing price/webhook IDs** keep checkout disabled until `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_ANNUAL_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are set.
 
 ---
 
-## Zod
+## python-dotenv
 
-### Setup / Initialisation
-
-No global setup needed. Import directly where used.
-
-```typescript
-import { z } from 'zod'
-```
-
-### Common Patterns
-
-**Validating Groq evaluation response:**
-```typescript
-const FeedbackSchema = z.object({
-  overall_level: z.enum(['B1', 'B2', 'C1']),
-  overall_verdict: z.enum(['Ready', 'Needs Work', 'Not Ready']),
-  fluency_score: z.number().int().min(1).max(10),
-  vocabulary_score: z.number().int().min(1).max(10),
-  grammar_score: z.number().int().min(1).max(10),
-  task_achievement_score: z.number().int().min(1).max(10),
-  fluency_notes: z.array(z.string()),
-  vocabulary_notes: z.array(z.string()),
-  grammar_notes: z.array(z.string()),
-  task_achievement_notes: z.array(z.string()),
-  pronunciation_flags: z.array(z.object({ word: z.string(), timestamp: z.number() })),
-  recommendations: z.array(z.string()).min(1).max(5),
-})
-
-export type FeedbackSchema = z.infer<typeof FeedbackSchema>
-
-// Usage
-const result = FeedbackSchema.safeParse(JSON.parse(raw))
-if (!result.success) {
-  console.error('[evaluate] invalid feedback schema:', result.error)
-  return Response.json({ error: 'invalid_feedback' }, { status: 500 })
-}
-```
-
-**Validating API request bodies:**
-```typescript
-const StartSessionSchema = z.object({
-  examType: z.enum(['ielts', 'cambridge_b2']),
-  level: z.enum(['b1', 'b2', 'c1']),
-  exerciseType: z.enum(['topic_discussion', 'debate', 'random']),
-})
-
-const body = await request.json()
-const result = StartSessionSchema.safeParse(body)
-if (!result.success) {
-  return Response.json({ error: 'invalid_request' }, { status: 400 })
-}
+```python
+from dotenv import load_dotenv
+load_dotenv(BASE_DIR / '.env.local')
+load_dotenv(BASE_DIR / '.env')
 ```
 
 ### Rules
-- **Use `safeParse`, not `parse`.** `parse` throws; `safeParse` returns a result object. In API routes, always use `safeParse` and return a proper HTTP error on failure.
-- **Derive TypeScript types from schemas with `z.infer`.** Never define a type and a schema separately — they'll drift.
-- **Schemas for all LLM response parsing.** Groq's JSON mode is mostly reliable but not guaranteed. Always validate.
-- **Schemas for all incoming API route bodies.** Never trust `request.json()` without validation.
+- `.env.local` wins over `.env` (first loader sets values; later loads do not override).
+- `.env.local` is git-ignored and contains live secrets. Never print, log, or commit its contents.
+- Keep `.env.example` as the key list with empty values.
+- Provider keys are consumed only through `django.conf.settings`.
+
+---
+
+## Browser APIs (no libraries)
+
+### Microphone — `static/js/audio-capture.js`
+
+- `navigator.mediaDevices.getUserMedia({ audio: {...} })`
+- `new AudioContext({ sampleRate: 16000 })`, then `audioWorklet.addModule(workletUrl)`
+- Worklet `public/worklets/pcm-processor.js` posts 1600-sample Float32 frames
+- Main thread converts Float32 → Int16 → base64
+- `stop()` disconnects nodes, stops tracks, closes the context
+
+### TTS playback — `static/js/tts.js`
+
+- `fetch('/api/tts/')` → `arrayBuffer()` → `AudioContext.decodeAudioData`
+- `createBufferSource` → `AnalyserNode` → destination
+- Fallback: `speechSynthesis.speak(new SpeechSynthesisUtterance(text))`
+- `stop()` cancels both the buffer source and browser speech
+
+### Fetch + CSRF — `static/js/csrf.js`
+
+```js
+export function csrfHeaders() {
+  return { 'X-CSRFToken': getCsrfToken(), 'Content-Type': 'application/json' }
+}
+```
+
+All state-changing fetches use `credentials: 'same-origin'` and these headers. JSON endpoints return `401` for unauthenticated requests; client code redirects to `/login/`.
+
+---
+
+## Testing
+
+```bash
+.venv/Scripts/python.exe manage.py test
+.venv/Scripts/python.exe manage.py check
+```
+
+- Provider calls are patched with `unittest.mock.patch('exams.views.services.<fn>')`.
+- Streaming responses are consumed with `b''.join(response.streaming_content)`.
+- 32 tests cover auth, pages, session start/free limit, provider endpoints, evaluation persistence, feedback rendering, and Stripe webhook signature handling.

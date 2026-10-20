@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Oral Exam Prep{% endblock %}
+
+{% block body %}
+<div class="landing">
+  <div class="landing-inner">
+    <span class="eyebrow">Entraînement oral par la voix</span>
+    <h1>Oral Exam Prep</h1>
+    <p>
+      Simulez de vrais examens oraux de certification avec un examinateur IA.
+      Entraînez-vous à l’expression orale IELTS et Cambridge B2 First aussi souvent
+      que vous le souhaitez.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{% url 'login' %}">Commencer l’entraînement</a>
+      <a class="btn btn-ghost" href="{% url 'register' %}">Créer un compte</a>
+    </div>
+    <div class="hero-tags" aria-hidden="true">
+      <span class="hero-tag">IELTS</span>
+      <span class="hero-tag hero-tag-indigo">Cambridge B2</span>
+      <span class="hero-tag hero-tag-amber">Anglais · Français</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

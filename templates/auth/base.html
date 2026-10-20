@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block body %}
+<div class="auth-page">
+  <div class="auth-card">
+    <a class="auth-brand" href="{% url 'landing' %}">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 3v18M8 8v8M4 11v2M16 6v12M20 10v4"/>
+        </svg>
+      </span>
+      <span>Oral Exam Prep</span>
+    </a>
+    {% if messages %}
+      <div class="flash-stack">
+        {% for message in messages %}
+          <p class="alert {% if message.tags == 'error' %}alert-error{% else %}alert-success{% endif %}">{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% block auth_content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

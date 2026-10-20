@@ -2,148 +2,239 @@
 
 _Written by `/imprint` after building any UI component. Read this before building a new one — never duplicate a pattern that already exists here._
 
+**Implementation:** Django templates in `templates/`, styles in `static/css/app.css`, CSS variables from `ui-tokens.md`. No Tailwind, no component library. Components are plain HTML + CSS classes; behavior lives in `static/js/` modules.
+
 ---
 
 ## Components
 
 ### Auth Card
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `templates/auth/base.html`, `auth/login.html`, `auth/register.html`
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Background | `bg-bg-card` |
-| Border | `border border-border` |
-| Border radius | `rounded-xl` |
-| Text — heading | `text-2xl font-semibold text-text-primary` |
-| Text — subtitle | `text-sm text-text-secondary` |
-| Spacing | `p-6`, form gap `gap-4`, section margin `mt-6` |
-| Max width | `max-w-sm` |
+| Page background | `.auth-page` (`var(--bg-page)`, centered flex) |
+| Card | `.auth-card` (`var(--bg-card)`, `1px solid var(--border)`, 12px radius, 24px padding) |
+| Brand | `.auth-brand` |
+| Heading | `.auth-title` |
+| Subtitle | `.auth-subtitle` |
+| Footer link | `.auth-switch` |
 
-**Pattern notes:** Auth card is the standard card container for centered single-form pages. All auth screens share this same shell. Children inside use `mt-6` for major section spacing and `mt-4` for alert spacing below the heading.
+**Pattern notes:** All auth screens share this shell. Forms use `.form-stack` with 16px gaps; alerts sit directly below the title.
 
 ---
 
 ### Form Input
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `templates/auth/login.html`, `auth/register.html`
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Background | `bg-bg-card-secondary` |
-| Border | `border border-border` |
-| Border focus | `focus:border-border-focus focus:outline-none` |
-| Border radius | `rounded-lg` |
-| Text | `text-[15px] text-text-primary` |
-| Placeholder | `placeholder:text-text-muted` |
-| Padding | `px-4 py-3` |
-| Width | `w-full` |
-| Label | `text-[13px] font-medium text-text-secondary` |
-| Label spacing | `mt-1` between label and input |
+| Field wrapper | `.field` |
+| Label | `.field label` (13px, 500, `var(--text-secondary)`) |
+| Input | `.input` (`var(--bg-card-secondary)`, `1px solid var(--border)`, 8px radius, `12px 16px`) |
+| Focus | `.input:focus` → border `var(--border-focus)`, no outline/ring |
+| Placeholder | `var(--text-muted)` |
+| Error text | `.field-error` (`var(--status-error)`) |
 
-**Pattern notes:** All text inputs share this exact class set. `w-full` always applied. The `mt-1` on the input itself creates the gap from the label above (not `gap-` on the parent). No shadow, no focus ring — only border color change.
+**Pattern notes:** Inputs are full width. Labels sit above the input with a small gap. No shadows, no focus ring — border color only.
 
 ---
 
 ### Primary Button (CTA)
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `static/css/app.css` (`.btn`, `.btn-primary`); used in auth, setup, session
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Background | `bg-accent` |
-| Background hover | `hover:bg-accent-dark` |
-| Text | `text-[15px] font-medium text-text-inverse` |
-| Border radius | `rounded-lg` |
-| Padding | `px-6 py-3` |
-| Transition | `transition-colors` |
+| Base | `.btn` — inline-flex, 15px/500, 8px radius, `12px 24px` |
+| Primary | `.btn-primary` — `var(--accent)` background, `var(--text-inverse)` text |
+| Hover | `.btn-primary:hover:not(:disabled)` → `var(--accent-dark)` |
+| Disabled | `.btn:disabled` → muted, `cursor: not-allowed` |
+| Full width | `.btn-block` |
 
-**Pattern notes:** Primary buttons are the main CTA on a page. Always solid accent background with inverse text. Used for submit actions. `mt-2` above the button to separate from preceding input or section.
+**Pattern notes:** One primary CTA per screen. Disabled state is used on setup until all selections are made.
 
 ---
 
-### Secondary Button (Outline/Ghost)
+### Secondary Button (Ghost)
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `static/css/app.css` (`.btn-ghost`, `.btn-danger`)
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Background | `bg-transparent` |
-| Border | `border border-border` |
-| Border hover | `hover:border-text-muted` |
-| Text | `text-[15px] font-medium text-text-secondary` |
-| Text hover | `hover:text-text-primary` |
-| Border radius | `rounded-lg` |
-| Padding | `px-6 py-3` |
-| Width | `w-full` |
-| Transition | `transition-all` |
+| Ghost | `.btn-ghost` — transparent, `1px solid var(--border)`, `var(--text-secondary)` text |
+| Ghost hover | border `var(--text-muted)`, text `var(--text-primary)` |
+| Danger | `.btn-danger` — transparent with `var(--status-error)` border/text |
 
-**Pattern notes:** Secondary buttons are outline-style with muted text that brightens on hover. Used for Google OAuth and other non-primary actions. Full width when stacking below the primary form section.
+**Pattern notes:** Secondary actions only. `.btn-danger` is reserved for ending a session; no filled red buttons anywhere.
 
 ---
 
 ### Status Message (Error / Success)
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `static/css/app.css` (`.alert`, `.alert-error`, `.alert-success`); used in auth, setup, session
+Last updated: 2026-10-20
 
-| Property | Class (Error) | Class (Success) |
+| Property | Error | Success |
 |---|---|---|
-| Background | `bg-status-error/10` | `bg-status-success/10` |
-| Border | `border border-status-error/30` | `border border-status-success/30` |
-| Text | `text-sm text-status-error` | `text-sm text-status-success` |
-| Border radius | `rounded-lg` | `rounded-lg` |
-| Padding | `px-3 py-2` | `px-3 py-2` |
+| Background | `rgba(217, 83, 79, 0.1)` | `rgba(76, 175, 125, 0.1)` |
+| Border | `var(--status-error)` at 30% | `var(--status-success)` at 30% |
+| Text | `var(--status-error)`, 14px | `var(--status-success)`, 14px |
 
-**Pattern notes:** Status messages appear inline within the card, below the heading/subtitle and above the form. Uses semi-transparent backgrounds and borders to keep the dark theme. `/10` for bg, `/30` for border, solid for text.
-
----
-
-### Auth Layout
-
-File: `app/(auth)/layout.tsx`
-Last updated: 2026-06-09
-
-| Property | Class |
-|---|---|
-| Container | `flex flex-1 items-center justify-center bg-bg-page` |
-
-**Pattern notes:** Full-viewport centered layout for auth pages. The `flex-1` (inherited from root layout's `flex flex-col`) stretches to fill remaining height. The child auth card sits centered both vertically and horizontally.
+**Pattern notes:** Inline alert blocks; `.hidden` toggles visibility from JS. Never use browser `alert()`.
 
 ---
 
 ### App Header
 
-File: `app/(app)/layout.tsx`
-Last updated: 2026-06-09
+File: `templates/app_base.html`; styles `.app-shell`, `.app-header`, `.brand`, `.app-nav`
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Layout | `flex items-center justify-between` |
-| Border bottom | `border-b border-border` |
-| Padding | `px-6 py-4` |
-| Wordmark | `text-base font-semibold text-text-primary no-underline` |
-| Nav link | `text-sm text-text-secondary no-underline transition-colors hover:text-text-primary` |
-| Nav gap | `gap-4` between nav items |
+| Layout | `.app-header` — flex, space-between, bottom border `var(--border)`, `24px` horizontal padding |
+| Wordmark | `.brand` — 16px/600, `var(--text-primary)`, no logo |
+| Nav links | `.app-nav a` — 14px, `var(--text-secondary)`, hover `var(--text-primary)` |
+| Sign out | POST form + `.nav-button` styled identically to nav links |
 
-**Pattern notes:** The app header is minimal — wordmark on left, nav links on right. No logo, just text. Links use secondary text that brightens on hover. No active state indicator. Sign Out is rendered as a form button styled identically to nav links.
+**Pattern notes:** Minimal header on authenticated pages only. The session room keeps the header but nothing else competes with the exam. Sign-out is a POST form (CSRF), never a GET link.
 
 ---
 
 ### Text Link (Inline)
 
-File: `app/(auth)/login/page.tsx`, `app/(auth)/register/page.tsx`
-Last updated: 2026-06-09
+File: `static/css/app.css` (`a`, `.auth-switch a`)
+Last updated: 2026-10-20
 
-| Property | Class |
+| Property | Implementation |
 |---|---|
-| Text | `font-medium text-accent` |
-| Hover | `hover:text-accent-dark` |
-| Text decoration | `no-underline` |
-| Transition | `transition-colors` |
+| Color | `var(--accent)` |
+| Hover | `#6D8FBE` |
+| Decoration | none |
 
-**Pattern notes:** Inline links within paragraphs use accent color, medium weight, no underline — only color change on hover. Used for "Register" / "Log In" links in the footer area of auth cards.
+**Pattern notes:** Inline links use accent color with no underline. Used for auth switches and in-page navigation.
+
+---
+
+### Setup Page Container
+
+File: `templates/setup.html`; styles `.page`, `.page-wide`, `.page-head`, `.config-section`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Container | `.page.page-wide` — max-width 896px, centered, `24px` / `32px` padding |
+| Heading block | `.page-head` — page title + supporting text |
+| Section | `.config-section` with 32px gap |
+| Section label | `.section-label` — 13px/500, `var(--text-secondary)` |
+
+**Pattern notes:** Setup is a single scrollable page with always-visible sections in fixed order: language, exam, level, exercise. No wizard, no steps hidden behind navigation.
+
+---
+
+### Setup Option Card
+
+File: `templates/setup.html`; styles `.option-list`, `.option-grid`, `.option-grid-3`, `.option-card`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Base | `.option-card` — `10px` radius, `1px solid var(--border)`, `var(--bg-card)`, 20px padding, left-aligned |
+| Selected | `.is-selected` — `var(--accent-faint)` bg, `var(--accent)` border, primary text |
+| Static/locked | `.is-static` — selected styling on a `<div>`, no hover, no pointer |
+| Hover (unselected) | border `var(--text-muted)`, text `var(--text-secondary)` |
+| Title | `.option-title` — 15px/500 |
+| Description | `.option-description` — 14px, muted |
+
+**Pattern notes:** Selection is communicated only by border + background + text color — no checkmarks, no shadows. Every option is a `<button type="button" aria-pressed>`; selection state is owned by `static/js/setup.js`, which also enables the Start button.
+
+---
+
+### Status Read-out (Definition List)
+
+File: `templates/session.html`; styles `.status-grid` (`<dl>`)
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Layout | `.status-grid` — two-column grid, 12px gap |
+| Label | `dt` — 13px, `var(--text-muted)` |
+| Value | `dd` — 15px/500, `var(--text-primary)` |
+
+**Pattern notes:** Compact label/value pairs for microphone and transcription status. Values are plain words (`idle`, `requesting`, `active`, `connected`, `error`) — never badges or pills. JS updates `dd[data-status]` text only.
+
+---
+
+### Transcript Line (Mono)
+
+File: `templates/session.html`; styles `.transcript-list`, `.transcript-speaker`, `.mono`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| List | `.transcript-list` — flex column, 8px gap, hidden until toggled |
+| Speaker label | `.transcript-speaker` — 12px, muted |
+| Text | `.mono` — 13px monospace |
+| Live partial | `.mono.muted` — secondary text until committed |
+| Empty state | `.muted` — 14px secondary line |
+
+**Pattern notes:** The transcript is a plain transcript, never chat bubbles. Live text is muted and replaced by committed entries. The panel is toggled by a ghost button and is scrollable.
+
+---
+
+### Session Controls
+
+File: `templates/session.html`; behavior `static/js/session.js`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Connect / Disconnect | `.btn.btn-primary` / `.btn.btn-ghost`, toggled by `hidden` |
+| Examiner reply | `.btn.btn-ghost` — streams the LLM reply into the status area |
+| Speak reply | `.btn.btn-ghost` — plays TTS (falls back to browser speech) |
+| End session | `.btn.btn-danger` — evaluates, then navigates to `/feedback/<id>/` |
+| Status text | `.mono` + `aria-live="polite"` |
+| Error alert | `.alert.alert-error.hidden` |
+
+**Pattern notes:** Buttons disable while an operation is in flight. All streams and audio sources are stopped on end, disconnect, and `pagehide`.
+
+---
+
+### Feedback Summary
+
+File: `templates/feedback.html`; styles `.feedback-summary`, `.feedback-level`, `.verdict`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Summary card | `.card` + `.feedback-summary` |
+| Level | `.feedback-level` — large level label (B1/B2/C1) |
+| Verdict | `.verdict` plus `.verdict-ready` / `.verdict-needs-work` / `.verdict-not-ready` |
+| Score grid | `.score-grid` + `.score-card` (`2×2`, collapsing to one column) |
+| Score label | `.score-label` — 13px muted |
+| Score value | `.score-value` — 40px/700; denominator in `small` |
+
+**Pattern notes:** Verdict color is the only semantic color on the page: success / warning / error. Scores are static — no count-up animations. Notes use `.notes-grid` + `.note-list`; recommendations and pronunciation flags use `.tag-list` + `.tag`. The full transcript closes the report in a `.card`.
+
+---
+
+### Account / Session History
+
+File: `templates/account.html`; styles `.detail-list`, `.session-history`, `.session-title`, `.session-meta`
+Last updated: 2026-10-20
+
+| Property | Implementation |
+|---|---|
+| Plan details | `.detail-list` (`<dl>`) — label/value pairs |
+| History list | `.session-history` — divided `<ul>`, separators `var(--border)` |
+| Session title | `.session-title` — 15px/500 |
+| Metadata | `.session-meta` — 13px muted |
+| Result link | Accent inline link to feedback when a report exists |
+
+**Pattern notes:** History lists the most recent sessions, newest first. Completed sessions link to feedback; active/abandoned sessions show status text instead.

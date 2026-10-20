@@ -123,7 +123,7 @@ The waveform is centered vertically in the available space. Nothing competes wit
 
 The status text beneath the waveform cycles through: `Listening...` / `Processing...` / `Examiner speaking...`. It transitions with a simple opacity fade (200ms). Never uses a spinner — just the text.
 
-The transcript panel slides up from the bottom when toggled. It uses `bg-card` background, `border-t` separator, max-height `40vh`, scrollable.
+The transcript panel slides up from the bottom when toggled. It uses a `var(--bg-card)` background, a top border (`1px solid var(--border)`), max-height `40vh`, scrollable.
 
 The "End session" button is small, secondary style, bottom-right. Clicking it changes the text to "Confirm end?" for 3 seconds. If the user clicks again within 3 seconds, the session ends. If not, it resets. No modal.
 
@@ -161,7 +161,9 @@ No spinners except for the post-session evaluation ("Generating your feedback...
 
 For the evaluation loading state: full-screen overlay on the session screen, `bg-page` background, centered text in `body` style. A subtle animated ellipsis after the text (CSS `::after` animation). No spinner, no progress bar.
 
-For page-level data loading (server components): use Next.js `loading.tsx` with skeleton blocks — `bg-card` rectangles at the expected dimensions of each content section, no shimmer animation.
+For page-level data loading, pages are server-rendered in Django — there is no client-side page fetch and no skeleton state. If a page ever needs deferred content, render static placeholder blocks in the template (`.card` surfaces at the expected dimensions) and replace them server-side; no shimmer animation.
+
+All styling lives in `static/css/app.css` using the CSS variables from `ui-tokens.md`. Templates never inline colors or spacing values.
 
 ---
 

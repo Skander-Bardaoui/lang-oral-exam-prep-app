@@ -1,0 +1,75 @@
+{% extends 'app_base.html' %}
+{% load static %}
+
+{% block title %}Session — Préparation d’examen oral{% endblock %}
+
+{% block app_content %}
+<div
+  class="page page-narrow"
+  data-session-page
+  data-session-id="{{ exam_session.id }}"
+  data-language="{{ exam_session.language }}"
+  data-language-locale="{{ language.locale }}"
+  data-worklet-url="{% static 'worklets/pcm-processor.js' %}"
+>
+  <header class="page-head">
+    <span class="eyebrow">{{ exam.name }} · {{ language.label }} · {{ level_label }} · {{ exercise_label }}</span>
+    <h1>Salle d’examen</h1>
+    <p>
+      L’examinateur posera la première question ci-dessous. Connectez votre micro,
+      répondez à voix haute, puis envoyez votre réponse pour poursuivre l’examen.
+    </p>
+  </header>
+
+  <div class="card">
+    <div class="button-row">
+      <button id="connect-btn" type="button" class="btn btn-primary">Connecter le micro</button>
+      <button id="disconnect-btn" type="button" class="btn btn-ghost" disabled>Déconnecter</button>
+      <button id="send-llm-btn" type="button" class="btn btn-ghost" disabled>Envoyer la réponse</button>
+      <button id="speak-btn" type="button" class="btn btn-ghost" disabled>Écouter l’examinateur</button>
+      <button id="end-session-btn" type="button" class="btn btn-danger" disabled>Terminer la session</button>
+    </div>
+
+    <dl class="status-grid">
+      <div>
+        <dt>Micro</dt>
+        <dd id="mic-status">inactif</dd>
+      </div>
+      <div>
+        <dt>Transcription</dt>
+        <dd id="transcription-status">inactive</dd>
+      </div>
+      <div>
+        <dt>Audio</dt>
+        <dd id="audio-status">inactif</dd>
+      </div>
+    </dl>
+
+    <p id="session-error" class="alert alert-error hidden" role="alert"></p>
+  </div>
+
+  <div class="card">
+    <h2>Question de l’examinateur</h2>
+    <p id="examiner-text" class="mono" aria-live="polite">
+      Préparation de la première question de l’examinateur…
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>En direct</h2>
+    <p id="live-transcript" class="mono muted">—</p>
+  </div>
+
+  <div class="card">
+    <h2>Transcription validée</h2>
+    <p id="committed-empty" class="muted">
+      Les segments de transcription validés apparaîtront ici au fil de votre prise de parole.
+    </p>
+    <ol id="committed-list" class="transcript-list hidden"></ol>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{% static 'js/session.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends 'app_base.html' %}
+{% load static %}
+
+{% block title %}Configurez votre examen — Oral Exam Prep{% endblock %}
+
+{% block app_content %}
+<div class="page page-wide">
+  <header class="page-head">
+    <h1>Configurez votre examen</h1>
+    <p>Choisissez votre langue, votre examen, votre niveau et votre type d’exercice pour commencer.</p>
+  </header>
+
+  <section class="config-section">
+    <p class="section-label">Langue</p>
+    <div class="option-grid option-grid-2" data-group="language">
+      {% for option in language_options %}
+        <button type="button" class="option-card" data-value="{{ option.value }}">
+          <span class="option-title">{{ option.label }}</span>
+          <span class="option-description">{{ option.description }}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="config-section">
+    <p class="section-label">Type d’examen</p>
+    <div class="option-list" data-group="examType">
+      {% for option in exam_options %}
+        <button type="button" class="option-card" data-value="{{ option.value }}">
+          <span class="option-title">{{ option.name }}</span>
+          <span class="option-description">{{ option.description }}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="config-section">
+    <p class="section-label">Niveau</p>
+    <div class="option-grid option-grid-3" data-group="level">
+      {% for option in level_options %}
+        <button type="button" class="option-card" data-value="{{ option.value }}">
+          <span class="option-title">{{ option.label }}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="config-section">
+    <p class="section-label">Type d’exercice</p>
+    <div class="option-list" data-group="exerciseType">
+      {% for option in exercise_options %}
+        <button type="button" class="option-card" data-value="{{ option.value }}">
+          <span class="option-title">{{ option.label }}</span>
+          <span class="option-description">{{ option.description }}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <button id="start-session" type="button" class="btn btn-primary btn-block" disabled>
+    Démarrer la session
+  </button>
+  <p id="setup-error" class="alert alert-error hidden" role="alert"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{% static 'js/setup.js' %}"></script>
+{% endblock %}
